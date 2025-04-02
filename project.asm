@@ -48,6 +48,7 @@
 .eqv GREEN 0x00ff00
 .eqv YELLOW 0xffff00
 .eqv WHITE 0xffffff
+.eqv BLACK 0x000000     # Added black color for erasing
 .eqv PLATFORM_HEIGHT 4
 .eqv PLATFORM_Y 63
 
@@ -71,14 +72,65 @@
 .eqv ENEMY11_X 20
 .eqv ENEMY12_X 30
 
+# Keyboard input addresses
+.eqv KEYBOARD_CONTROL 0xffff0000
+.eqv KEYBOARD_DATA 0xffff0004
+
+# Movement keys
+.eqv KEY_A 97          # ASCII for 'a' - move left
+.eqv KEY_D 100         # ASCII for 'd' - move right
+.eqv KEY_W 119		# ASCII for 'w' - jump
+
+.data
+player_x:   .word 10    # Store player's current x position
+player_y:	.word 60	# Y pos
+player_vy:	.word 0		# Velocity
+
 .globl main
 .text
 main:
-	li $t0, BASE_ADDRESS 	# $t0 stores the base address for display
-	li $t1, GREEN 		# $t1 stores the yellow colour codee
-	li $t9, WHITE
-	li $t8, RED
+	# Initialize the game
+	jal draw_game
 	
+game_loop:
+	# Check for keyboard input
+	jal check_keyboard_input
+	
+	# Small delay
+	li $a0, 50
+	jal delay
+	
+	j game_loop
+
+# Draw the entire game state
+draw_game:
+	# Save return address
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	# Draw platforms
+	jal draw_platforms
+	
+	# Draw player at current position
+	jal draw_player
+	
+	# Draw enemies
+	jal draw_enemies
+	
+	# Restore return address and return
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+
+# Draw all platforms
+draw_platforms:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	li $t0, BASE_ADDRESS 	# $t0 stores the base address for display
+	li $t1, GREEN 		# $t1 stores the green colour code
+	
+	# Draw main platform
 	li $t2, PLATFORM_Y	# Load Y position
 	li $t3, DISPLAY_WIDTH	# Load width
 	mul $t2, $t2, $t3	# Y x width = number of pixels to modify
@@ -95,6 +147,7 @@ main:
 	sw $t1, 0($t6)
 	addi $t3, $t3, 1
 	bne $t3, $t4, platform_draw
+	
 	#### Draw the first floor ####
 	li $t2, FLOOR11_Y
 	li $t3, DISPLAY_WIDTH
@@ -111,6 +164,7 @@ main:
 	sw $t1, 0($t6)
 	addi $t3, $t3, 1
 	bne $t3, $t4, floor11_draw
+	
 	#### Draw the second floor #####
 	li $t2, FLOOR12_Y
 	li $t3, DISPLAY_WIDTH
@@ -127,6 +181,7 @@ main:
 	sw $t1, 0($t6)
 	addi $t3, $t3, 1
 	bne $t3, $t4, floor12_draw
+	
 	#### Draw the third floor #####
 	li $t2, FLOOR13_Y
 	li $t3, DISPLAY_WIDTH
@@ -144,23 +199,84 @@ main:
 	addi $t3, $t3, 1
 	bne $t3, $t4, floor13_draw
 	
+	# Restore return address and return
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+
+# Draw the player at current position
+draw_player:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	li $t0, BASE_ADDRESS
+	li $t9, WHITE        # Player color
+	
+	# Get current player x position
+	lw $t1, player_x
+	
 	# Now draw player
 	li $t2, PLATFORM_Y
 	subi $t2, $t2, 1
 	li $t7, OBJ_HEIGHT
 	li $t3, 0
-	draw_player:
+	draw_player_loop:
 	sub $t4, $t2, $t3
 	li $t5, DISPLAY_WIDTH
 	mul $t4, $t4, $t5
 	sll $t4, $t4, 2
 	add $t4, $t0, $t4
-	li $t5, PLAYER_X
+	move $t5, $t1        # Use current player_x
 	sll $t5, $t5, 2
 	add $t6, $t4, $t5
 	sw $t9, 0($t6)
 	add $t3, $t3, 1
-	bne $t3, $t7, draw_player
+	bne $t3, $t7, draw_player_loop
+	
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+
+# Erase the player from current position
+erase_player:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	li $t0, BASE_ADDRESS
+	li $t9, BLACK        # Color to erase with
+	
+	# Get current player x position
+	lw $t1, player_x
+	
+	# Erase player
+	li $t2, PLATFORM_Y
+	subi $t2, $t2, 1
+	li $t7, OBJ_HEIGHT
+	li $t3, 0
+	erase_player_loop:
+	sub $t4, $t2, $t3
+	li $t5, DISPLAY_WIDTH
+	mul $t4, $t4, $t5
+	sll $t4, $t4, 2
+	add $t4, $t0, $t4
+	move $t5, $t1        # Use current player_x
+	sll $t5, $t5, 2
+	add $t6, $t4, $t5
+	sw $t9, 0($t6)
+	add $t3, $t3, 1
+	bne $t3, $t7, erase_player_loop
+	
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+
+# Draw all enemies
+draw_enemies:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	li $t0, BASE_ADDRESS
+	li $t8, RED         # Enemy color
 	
 	# Draw enemy 1
 	li $t2, PLATFORM_Y
@@ -180,7 +296,83 @@ main:
 	add $t3, $t3, 1
 	bne $t3, $t7, draw_enemy11
 	
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+
+# Check for keyboard input
+check_keyboard_input:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
 	
+	# Check if key pressed
+	lw $t0, KEYBOARD_CONTROL
+	andi $t0, $t0, 1
+	beqz $t0, check_keyboard_end   # No key pressed
+	
+	# Key was pressed, get the value
+	lw $t1, KEYBOARD_DATA
+	
+	# Move left if 'a' is pressed
+	beq $t1, KEY_A, move_left
+	
+	# Move right if 'd' is pressed
+	beq $t1, KEY_D, move_right
+	
+	j check_keyboard_end
+
+move_left:
+	# First erase the player
+	jal erase_player
+	
+	# Get current position
+	lw $t0, player_x
+	
+	# Check boundary (don't move beyond left edge)
+	ble $t0, PLATFORM_START, skip_move_left
+	
+	# Move player left
+	subi $t0, $t0, 1
+	sw $t0, player_x
+	
+skip_move_left:
+	# Draw player at new position
+	jal draw_player
+	j check_keyboard_end
+
+move_right:
+	# First erase the player
+	jal erase_player
+	
+	# Get current position
+	lw $t0, player_x
+	
+	# Check boundary (don't move beyond right edge)
+	bge $t0, PLATFORM_END, skip_move_right
+	
+	# Move player right
+	addi $t0, $t0, 1
+	sw $t0, player_x
+	
+skip_move_right:
+	# Draw player at new position
+	jal draw_player
+	j check_keyboard_end
+
+check_keyboard_end:
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+
+# Delay function
+delay:
+	# $a0 contains the delay amount
+	li $t0, 0
+delay_loop:
+	addi $t0, $t0, 1
+	blt $t0, $a0, delay_loop
+	jr $ra
+
 exit_game:
 	li $v0, 10
 	syscall

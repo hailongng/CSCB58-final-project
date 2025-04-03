@@ -1,40 +1,3 @@
-#####################################################################
-#
-# CSCB58 Winter 2024 Assembly Final Project
-# University of Toronto, Scarborough
-#
-# Name: Nguyen Hai Long
-# Student Number: 1010597418
-# UTorID: nguy3744
-# Official email: hailong.nguyen@mail.utoronto.ca
-#
-# Bitmap Display Configuration:
-# - Unit width in pixels: 4 (update this as needed)
-# - Unit height in pixels: 4 (update this as needed)
-# - Display width in pixels: 256 (update this as needed)
-# - Display height in pixels: 256 (update this as needed)
-# - Base Address for Display: 0x10008000 ($gp)
-#
-# Which milestoneshave been reached in this submission?
-# (See the assignment handout for descriptions of the milestones)
-# - Milestone 1/2/3/4 (choose the one the applies)
-#
-# Which approved features have been implemented for milestone 3?
-# (See the assignment handout for the list of additional features)
-# 1. (fill in the feature, if any)
-# 2. (fill in the feature, if any)
-# 3. (fill in the feature, if any)
-# ... (add more if necessary)
-#
-# Link to video demonstration for final submission:
-# - (insert YouTube / MyMedia / other URL here). Make sure we can view it!
-#
-# Are you OK with us sharing the video with people outside course staff?
-# - yes
-#
-# Any additional information that the TA needs to know:
-#
-#####################################################################
 .eqv BASE_ADDRESS 0x10008000
 .eqv PLAYER_START_POS 8		# Note: x-coordinate
 .eqv ENEMY1_START_POS 24	# Note: x-coordinate
@@ -62,7 +25,7 @@
 
 .eqv FLOOR13_Y 55
 .eqv FLOOR13_START 30
-.eqv FLOOR13_END 60
+.eqv FLOOR13_END 55
 
 .eqv OBJ_HEIGHT 3	# Define for both players and enemies
 ### Info for the player
@@ -80,10 +43,14 @@
 .eqv KEY_A 97          # ASCII for 'a' - move left
 .eqv KEY_D 100         # ASCII for 'd' - move right
 .eqv KEY_W 119		# ASCII for 'w' - jump
+.eqv KEY_S 115		# ASCII for 's' - moving down
+.eqv KEY_Q 113         # ASCII for 'q'
+.eqv KEY_R 114         # ASCII for 'r'
+
 
 .data
 player_x:   .word 10    # Store player's current x position
-player_y:	.word 60	# Y pos
+player_y:	.word 63	# Y pos
 player_vy:	.word 0		# Velocity
 
 .globl main
@@ -214,9 +181,9 @@ draw_player:
 	
 	# Get current player x position
 	lw $t1, player_x
-	
+	lw $t2, player_y
 	# Now draw player
-	li $t2, PLATFORM_Y
+
 	subi $t2, $t2, 1
 	li $t7, OBJ_HEIGHT
 	li $t3, 0
@@ -247,9 +214,9 @@ erase_player:
 	
 	# Get current player x position
 	lw $t1, player_x
-	
+	lw $t2, player_y	
 	# Erase player
-	li $t2, PLATFORM_Y
+
 	subi $t2, $t2, 1
 	li $t7, OBJ_HEIGHT
 	li $t3, 0
@@ -318,6 +285,9 @@ check_keyboard_input:
 	
 	# Move right if 'd' is pressed
 	beq $t1, KEY_D, move_right
+	beq $t1, KEY_W, jump_up
+	# Quit if 'q' is pressed
+	beq $t1, KEY_Q, exit_game
 	
 	j check_keyboard_end
 
@@ -359,6 +329,77 @@ skip_move_right:
 	jal draw_player
 	j check_keyboard_end
 
+jump_up:
+	jal erase_player
+	
+	lw $t0, player_x
+	lw $t1, player_y
+	li $t2, PLATFORM_Y
+	beq $t1, $t2, check_jump_from_platform
+	li $t2, FLOOR11_Y
+	beq $t1, $t2, check_jump_from_floor11
+	li $t2, FLOOR12_Y
+	subi $t2, $t2, 3
+	beq $t1, $t2, check_jump_from_floor12
+	j skip_jump
+
+check_jump_from_platform:
+	# If player is under floor11
+	blt $t0, FLOOR11_START, check_floor12
+	bgt $t0, FLOOR11_END, check_floor12
+	#Can jump to floor11
+	li $t2, FLOOR11_Y
+	sw $t2, player_y
+	j perform_jump
+
+check_floor12:
+	blt $t0, FLOOR12_START, check_floor13
+	bgt $t0, FLOOR12_END, check_floor13
+	# Can jump to floor13
+	li $t2, FLOOR12_Y
+	sw $t2, player_y
+	j perform_jump
+
+check_floor13:
+	# Check if under floor13
+	blt $t0, FLOOR13_START, skip_jump
+	bgt $t0, FLOOR13_END, skip_jump
+	
+	# Can jump to floor13
+	li $t2, FLOOR13_Y
+	sw $t2, player_y
+	j perform_jump
+
+check_jump_from_floor11:
+	# Check if player can jump from floor11 to floor13
+	blt $t0, FLOOR13_START, skip_jump
+	bgt $t0, FLOOR13_END, skip_jump
+	
+	# Can jump to floor13
+	li $t2, FLOOR13_Y
+	sw $t2, player_y
+	j perform_jump
+	
+check_jump_from_floor12:
+	# Check if player can jump from floor12 to floor13
+	blt $t0, FLOOR13_START, skip_jump
+	bgt $t0, FLOOR13_END, skip_jump
+	
+	# Can jump to floor13
+	li $t2, FLOOR13_Y
+	sw $t2, player_y
+	j perform_jump
+
+perform_jump:
+	# Draw player at new position
+	jal draw_player
+	j check_keyboard_end
+	
+skip_jump:
+	# Just redraw the player at the current position
+	jal draw_player
+	j check_keyboard_end
+	
 check_keyboard_end:
 	lw $ra, 0($sp)
 	addi $sp, $sp, 4

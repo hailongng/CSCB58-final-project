@@ -1,3 +1,9 @@
+# Bizarre stuff:
+# When I am on floor 1, I got overextended for 1 byte
+# When I am on floor 2, eveytime I go down, I go into an alternating pattern
+# When I am on floor 3, for some reason, I fall to floor 2, where I should be able to go to platform
+
+
 .eqv BASE_ADDRESS 0x10008000
 .eqv PLAYER_START_POS 8		# Note: x-coordinate
 .eqv ENEMY1_START_POS 24	# Note: x-coordinate
@@ -23,7 +29,7 @@
 .eqv FLOOR12_START 25
 .eqv FLOOR12_END 50
 
-.eqv FLOOR13_Y 55
+.eqv FLOOR13_Y 54
 .eqv FLOOR13_START 30
 .eqv FLOOR13_END 55
 
@@ -52,6 +58,8 @@
 player_x:   .word 10    # Store player's current x position
 player_y:	.word 63	# Y pos
 player_vy:	.word 0		# Velocity
+coins_x:	.word 15, 30, 35, 40
+coins_y:	.word 56, 56, 56, 56
 
 .globl main
 .text
@@ -75,14 +83,9 @@ draw_game:
 	addi $sp, $sp, -4
 	sw $ra, 0($sp)
 	
-	# Draw platforms
-	jal draw_platforms
-	
-	# Draw player at current position
-	jal draw_player
-	
-	# Draw enemies
-	jal draw_enemies
+	jal draw_platforms	# Draw platforms
+	jal draw_coins
+	jal draw_player		# Draw player at current position
 	
 	# Restore return address and return
 	lw $ra, 0($sp)
@@ -170,6 +173,60 @@ draw_platforms:
 	lw $ra, 0($sp)
 	addi $sp, $sp, 4
 	jr $ra
+	
+draw_coins:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	li $t0, BASE_ADDRESS     # Base display address
+	li $t1, YELLOW           # Yellow color for coins
+	
+	# We have 4 coins in the array (as per your data section)
+	li $t2, 0                # Counter for coins
+	
+draw_coins_loop:
+	beq $t2, 4, draw_coins_end  # If we've drawn all 4 coins, exit
+	
+	# Get coin coordinates
+	la $t3, coins_x
+	la $t4, coins_y
+	sll $t5, $t2, 2          # Multiply counter by 4 to get offset (each word is 4 bytes)
+	add $t3, $t3, $t5        # Add offset to coins_x address
+	add $t4, $t4, $t5        # Add offset to coins_y address
+	lw $t6, 0($t3)           # Load x-coordinate
+	lw $t7, 0($t4)           # Load y-coordinate
+	
+	# Draw 2x2 square at (x,y)
+	# First pixel (top-left)
+	li $t8, DISPLAY_WIDTH
+	mul $t9, $t7, $t8        # y * width
+	add $t9, $t9, $t6        # y * width + x
+	sll $t9, $t9, 2          # Multiply by 4 (bytes per pixel)
+	add $t9, $t0, $t9        # Add base address
+	sw $t1, 0($t9)           # Draw first pixel
+	
+	# Second pixel (top-right)
+	addi $t9, $t9, 4         # Move one pixel right
+	sw $t1, 0($t9)           # Draw second pixel
+	
+	# Third pixel (bottom-left)
+	li $t8, DISPLAY_WIDTH
+	sll $t8, $t8, 2          # Convert width to bytes
+	sub $t9, $t9, 4          # Move back to first column
+	add $t9, $t9, $t8        # Move down one row
+	sw $t1, 0($t9)           # Draw third pixel
+	
+	# Fourth pixel (bottom-right)
+	addi $t9, $t9, 4         # Move one pixel right
+	sw $t1, 0($t9)           # Draw fourth pixel
+	
+	addi $t2, $t2, 1         # Increment counter
+	j draw_coins_loop        # Process next coin
+	
+draw_coins_end:
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
 
 # Draw the player at current position
 draw_player:
@@ -237,36 +294,6 @@ erase_player:
 	addi $sp, $sp, 4
 	jr $ra
 
-# Draw all enemies
-draw_enemies:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
-	
-	li $t0, BASE_ADDRESS
-	li $t8, RED         # Enemy color
-	
-	# Draw enemy 1
-	li $t2, PLATFORM_Y
-	subi $t2, $t2, 1
-	li $t7, OBJ_HEIGHT
-	li $t3, 0
-	draw_enemy11:
-	sub $t4, $t2, $t3
-	li $t5, DISPLAY_WIDTH
-	mul $t4, $t4, $t5
-	sll $t4, $t4, 2
-	add $t4, $t0, $t4
-	li $t5, ENEMY11_X
-	sll $t5, $t5, 2
-	add $t6, $t4, $t5
-	sw $t8, 0($t6)
-	add $t3, $t3, 1
-	bne $t3, $t7, draw_enemy11
-	
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
-	jr $ra
-
 # Check for keyboard input
 check_keyboard_input:
 	addi $sp, $sp, -4
@@ -297,38 +324,126 @@ move_left:
 	
 	# Get current position
 	lw $t0, player_x
-	
-	# Check boundary (don't move beyond left edge)
-	ble $t0, PLATFORM_START, skip_move_left
+	lw $t1, player_y
 	
 	# Move player left
 	subi $t0, $t0, 1
 	sw $t0, player_x
 	
-skip_move_left:
-	# Draw player at new position
-	jal draw_player
+	jal check_platform_beneath	# Check if player is at valid pos
+	
+	jal draw_player			# Draw player
 	j check_keyboard_end
-
+	
 move_right:
 	# First erase the player
 	jal erase_player
 	
 	# Get current position
 	lw $t0, player_x
-	
-	# Check boundary (don't move beyond right edge)
-	bge $t0, PLATFORM_END, skip_move_right
+	lw $t1, player_y
 	
 	# Move player right
 	addi $t0, $t0, 1
 	sw $t0, player_x
 	
-skip_move_right:
-	# Draw player at new position
+	jal check_platform_beneath
 	jal draw_player
 	j check_keyboard_end
 
+check_platform_beneath:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	lw $t0, player_x
+	lw $t1, player_y
+	
+	li $t2, FLOOR13_Y
+	beq $t1, $t2, check_floor13_bounds
+	
+	li $t2, FLOOR12_Y
+	beq $t1, $t2, check_floor11_and_12_bounds
+	
+	li $t2, PLATFORM_Y
+	beq $t1, $t2, check_platform_bounds
+	
+	j fall_to_platform
+
+check_platform_bounds:
+	blt $t0, PLATFORM_START, adjust_to_platform_start
+	bgt $t0, PLATFORM_END, adjust_to_platform_end
+	j check_platform_end
+
+check_floor13_bounds:
+	blt $t0, FLOOR13_START, fall_from_floor13
+	bgt $t0, FLOOR13_END, fall_from_floor13
+	j check_platform_end
+	
+check_floor11_and_12_bounds:
+	blt $t0, FLOOR11_START, check_if_on_floor12
+	ble $t0, FLOOR11_END, check_platform_end  # Player is on floor11
+	
+check_if_on_floor12:
+	blt $t0, FLOOR12_START, low_fall
+	ble $t0, FLOOR12_END, check_platform_end
+
+low_fall:
+	j fall_to_platform
+
+fall_from_floor13:
+	# First check if there's floor11 or floor12 beneath
+	# Check for floor11
+	blt $t0, FLOOR12_START, check_floor13_to_floor11
+	ble $t0, FLOOR12_END, land_on_floor12
+
+check_floor13_to_floor11:
+	blt $t0, FLOOR11_START, fall_to_platform      # Not above any floor, fall to platform
+	ble $t0, FLOOR11_END, land_on_floor11         # Above floor11, land on it
+	
+	# If not above any floor, fall to main platform
+	j fall_to_platform
+
+check_floor13_to_floor12:
+	blt $t0, FLOOR12_START, fall_to_platform
+	ble $t0, FLOOR12_END, land_on_floor12
+	
+	# If no floor beneath, fall to platform
+	j fall_to_platform
+
+land_on_floor11:
+	li $t1, FLOOR11_Y
+	sw $t1, player_y
+	j check_platform_end
+
+land_on_floor12:
+	li $t1, FLOOR12_Y
+	sw $t1, player_y
+	j check_platform_end
+
+fall_to_platform:
+	li $t1, PLATFORM_Y
+	sw $t1, player_y
+	
+	#Ensure within bound
+	blt $t0, PLATFORM_START, adjust_to_platform_start
+	bge $t0, PLATFORM_END, adjust_to_platform_end
+	j check_platform_end
+
+adjust_to_platform_start:
+	li $t0, PLATFORM_START
+	sw $t0, player_x
+	j check_platform_end
+
+	
+adjust_to_platform_end:
+	li $t0, PLATFORM_END
+	sw $t0, player_x
+	
+check_platform_end:
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+	
 jump_up:
 	jal erase_player
 	
@@ -339,7 +454,6 @@ jump_up:
 	li $t2, FLOOR11_Y
 	beq $t1, $t2, check_jump_from_floor11
 	li $t2, FLOOR12_Y
-	subi $t2, $t2, 3
 	beq $t1, $t2, check_jump_from_floor12
 	j skip_jump
 

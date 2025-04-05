@@ -1,9 +1,3 @@
-# Bizarre stuff:
-# When I am on floor 1, I got overextended for 1 byte
-# When I am on floor 2, eveytime I go down, I go into an alternating pattern
-# When I am on floor 3, for some reason, I fall to floor 2, where I should be able to go to platform
-
-
 .eqv BASE_ADDRESS 0x10008000
 .eqv PLAYER_START_POS 8		# Note: x-coordinate
 .eqv ENEMY1_START_POS 24	# Note: x-coordinate
@@ -60,6 +54,9 @@ player_y:	.word 63	# Y pos
 player_vy:	.word 0		# Velocity
 coins_x:	.word 15, 30, 35, 40
 coins_y:	.word 56, 56, 56, 56
+coins_collected:	.word 0
+coins_active:		.word 1, 1, 1, 1	# 1: not collected, 0: collected
+coin_count_msg:		.asciiz	"Coins: "
 
 .globl main
 .text
@@ -71,8 +68,10 @@ game_loop:
 	# Check for keyboard input
 	jal check_keyboard_input
 	
+	jal check_coin_collection
+	
 	# Small delay
-	li $a0, 50
+	li $a0, 20
 	jal delay
 	
 	j game_loop
@@ -518,7 +517,95 @@ check_keyboard_end:
 	lw $ra, 0($sp)
 	addi $sp, $sp, 4
 	jr $ra
+	
+check_coin_collection:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	lw $t0, player_x
+	lw $t1, player_y
+	
+	li $t2, 0	# Initialise coin counter loop
+check_coin_loop:
+	beq $t2, 4, check_coins_end
+	# Check if the coin is collected
+	la $t3, coins_active
+	sll $t4, $t2, 2		# Find offset
+	add $t3, $t3, $t4	# Add offset to current coin addresss
+	lw $t5, 0($t3)		# Load active status
+	beqz $t5, next_coin	# Skip if the coin is already collected
+		
+	la $t6, coins_x		
+	la $t7, coins_y		
+	add $t6, $t6, $t4	# Offset adjustment
+	add $t7, $t7, $t4
+	lw $t8, 0($t6)		# Load coin x-coordinate
+	lw $t9, 0($t7)		# Load coin y-coordinate
+	
+	# Check y-coord with some tolerance (remember, player is 3 units tall)
+	bne $t0, $t8, next_coin
+	sub $t9, $t1, $t9
+	abs $t9, $t9
+	bgt $t9, 3, next_coin		# If difference is too large, move to the next coin
+	
+	# We encounter a coin. Deal with it
+	## TO DO: Need to change the effect color of player "picking up" the coin
+	sw $zero, 0($t3)
+	
+	# Increase the number of coins collected
+	lw $t9, coins_collected
+	addi $t9, $t9, 1
+	sw $t9, coins_collected
+	
+	jal erase_coin
+	
+next_coin:
+	addi $t2, $t2, 1
+	j check_coin_loop
+	
+check_coins_end:
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
 
+erase_coin:
+	# $t2 contains the coin index
+	# Get coin coordinates
+	la $t3, coins_x
+	la $t4, coins_y
+	sll $t5, $t2, 2          # Multiply by 4 to get offset
+	add $t3, $t3, $t5        # Add offset to coins_x address
+	add $t4, $t4, $t5        # Add offset to coins_y address
+	lw $t6, 0($t3)           # Load x-coordinate
+	lw $t7, 0($t4)           # Load y-coordinate
+	
+	li $t0, BASE_ADDRESS     # Base display address
+	li $t1, BLACK            # Black color for erasing
+	
+	# Erase 2x2 square at (x,y)
+	# First pixel (top-left)
+	li $t8, DISPLAY_WIDTH
+	mul $t9, $t7, $t8        # y * width
+	add $t9, $t9, $t6        # y * width + x
+	sll $t9, $t9, 2          # Multiply by 4 (bytes per pixel)
+	add $t9, $t0, $t9        # Add base address
+	sw $t1, 0($t9)           # Erase first pixel
+	
+	# Second pixel (top-right)
+	addi $t9, $t9, 4         # Move one pixel right
+	sw $t1, 0($t9)           # Erase second pixel
+	
+	# Third pixel (bottom-left)
+	li $t8, DISPLAY_WIDTH
+	sll $t8, $t8, 2          # Convert width to bytes
+	sub $t9, $t9, 4          # Move back to first column
+	add $t9, $t9, $t8        # Move down one row
+	sw $t1, 0($t9)           # Erase third pixel
+	
+	# Fourth pixel (bottom-right)
+	addi $t9, $t9, 4         # Move one pixel right
+	sw $t1, 0($t9)           # Erase fourth pixel
+	
+	jr $ra
 # Delay function
 delay:
 	# $a0 contains the delay amount

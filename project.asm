@@ -47,6 +47,7 @@
 .eqv KEY_Q 113         # ASCII for 'q'
 .eqv KEY_R 114         # ASCII for 'r'
 
+.eqv TOTAL_COINS 4
 
 .data
 player_x:   .word 10    # Store player's current x position
@@ -56,7 +57,7 @@ coins_x:	.word 15, 30, 35, 40
 coins_y:	.word 56, 56, 56, 56
 coins_collected:	.word 0
 coins_active:		.word 1, 1, 1, 1	# 1: not collected, 0: collected
-coin_count_msg:		.asciiz	"Coins: "
+game_won:		.word 0
 
 .globl main
 .text
@@ -65,16 +66,152 @@ main:
 	jal draw_game
 	
 game_loop:
-	# Check for keyboard input
-	jal check_keyboard_input
+	lw $t0, game_won
+	bnez $t0, game_loop		# If game is won, just loop without processing inputs
+	jal check_keyboard_input	# Check for keyboard input
 	
 	jal check_coin_collection
+	jal check_win_condition		# Check if all coins are collected
 	
 	# Small delay
 	li $a0, 20
 	jal delay
 	
 	j game_loop
+
+check_win_condition:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	lw $t0, coins_collected
+	li $t1, TOTAL_COINS
+	bne $t0, $t1, win_condition_end  # If not all coins collected, return
+	
+	# All coins collected - player wins!
+	li $t0, 1
+	sw $t0, game_won  # Set the game_won flag
+	
+	# Display the "W" for win
+	jal draw_win_message
+	
+win_condition_end:
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+	
+delay:
+	li $t0, 0
+delay_loop:
+	addi $t0, $t0, 1
+	blt $t0, $a0, delay_loop
+	jr $ra
+exit_game:
+	li $v0, 10
+	syscall
+	
+############# DRAW WIN MESSAGE ###########################################
+draw_win_message:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+	
+	li $t0, BASE_ADDRESS
+	li $t1, GREEN  # Green color for the win message
+	
+	# Draw W in center of screen
+	# We'll draw a simple W shape using pixels at around positions:
+	# (24,30) to (24,34) | (28,34) | (32,34) to (32,30)
+	# And diagonals from (24,34) to (28,38) and (32,34) to (28,38)
+	
+	# Left vertical line of W
+	li $t2, 24  # X position
+	li $t3, 30  # Starting Y position
+	li $t4, 34  # Ending Y position
+	
+left_vertical:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	addi $t3, $t3, 1
+	ble $t3, $t4, left_vertical
+	
+	# Right vertical line of W
+	li $t2, 40  # X position
+	li $t3, 30  # Starting Y position
+	
+right_vertical:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	addi $t3, $t3, 1
+	ble $t3, $t4, right_vertical
+	
+	# Left diagonal (down-right)
+	li $t2, 24  # Starting X position
+	li $t3, 34  # Starting Y position
+	li $t9, 32  # Ending X position
+	
+left_diagonal:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	addi $t2, $t2, 1  # Increment X
+	addi $t3, $t3, 1  # Increment Y
+	ble $t2, $t9, left_diagonal
+	
+	# Right diagonal (down-left)
+	li $t2, 40  # Starting X position
+	li $t3, 34  # Starting Y position
+	li $t9, 32  # Ending X position
+	
+right_diagonal:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	subi $t2, $t2, 1  # Decrement X
+	addi $t3, $t3, 1  # Increment Y
+	bge $t2, $t9, right_diagonal
+	
+	# Middle vertical line of W
+	li $t2, 32  # X position
+	li $t3, 30  # Starting Y position
+	li $t4, 38  # Ending Y position
+	
+middle_vertical:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	addi $t3, $t3, 1
+	ble $t3, $t4, middle_vertical
+	
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra
+############# END OF DRAW WIN MESSAGE ###########################################
 
 # Draw the entire game state
 draw_game:
@@ -607,14 +744,14 @@ erase_coin:
 	
 	jr $ra
 # Delay function
-delay:
+#delay:
 	# $a0 contains the delay amount
-	li $t0, 0
-delay_loop:
-	addi $t0, $t0, 1
-	blt $t0, $a0, delay_loop
-	jr $ra
+	#li $t0, 0
+#delay_loop:
+	#addi $t0, $t0, 1
+	#blt $t0, $a0, delay_loop
+	#jr $ra
 
-exit_game:
-	li $v0, 10
-	syscall
+#exit_game:
+	#li $v0, 10
+	#syscall

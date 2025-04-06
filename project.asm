@@ -621,13 +621,10 @@ check_keyboard_input:
 	# Key was pressed, get the value
 	lw $t1, KEYBOARD_DATA
 	
-	# Move left if 'a' is pressed
 	beq $t1, KEY_A, move_left
-	
-	# Move right if 'd' is pressed
 	beq $t1, KEY_D, move_right
 	beq $t1, KEY_W, jump_up
-	#beq $t1, KEY_S, drop_down
+	beq $t1, KEY_S, drop_down
 	# Quit if 'q' is pressed
 	beq $t1, KEY_Q, exit_game
 	
@@ -866,6 +863,88 @@ perform_jump:
 	j check_keyboard_end
 	
 skip_jump:
+	# Just redraw the player at the current position
+	jal draw_player
+	j check_keyboard_end
+
+drop_down:
+	# First erase the player from current position
+	jal erase_player
+	
+	# Get current position
+	lw $t0, player_x
+	lw $t1, player_y
+	
+	# Check which floor the player is on
+	li $t2, FLOOR13_Y
+	beq $t1, $t2, drop_from_floor13
+	
+	li $t2, FLOOR11_Y
+	beq $t1, $t2, drop_from_floor11_or_12
+	
+	li $t2, FLOOR12_Y
+	beq $t1, $t2, drop_from_floor11_or_12
+	
+	# If on the platform, can't drop any further
+	j skip_drop
+
+drop_from_floor13:
+	# Check if player can drop to floor11 or floor12
+	# First check if above floor11
+	blt $t0, FLOOR11_START, check_drop_to_floor12
+	ble $t0, FLOOR11_END, drop_to_floor11
+	
+check_drop_to_floor12:
+	# Check if above floor12
+	blt $t0, FLOOR12_START, drop_to_platform
+	ble $t0, FLOOR12_END, drop_to_floor12
+	
+	# If not above any floor, drop to platform
+	j drop_to_platform
+
+drop_from_floor11_or_12:
+	# If on floor11 or floor12, can only drop to platform
+	j drop_to_platform
+
+drop_to_floor11:
+	# Set position to floor11
+	li $t1, FLOOR11_Y
+	sw $t1, player_y
+	j finish_drop
+
+drop_to_floor12:
+	# Set position to floor12
+	li $t1, FLOOR12_Y
+	sw $t1, player_y
+	j finish_drop
+
+drop_to_platform:
+	# Set position to platform
+	li $t1, PLATFORM_Y
+	sw $t1, player_y
+	
+	# Ensure within platform bounds
+	blt $t0, PLATFORM_START, adjust_drop_to_platform_start
+	bge $t0, PLATFORM_END, adjust_drop_to_platform_end
+	j finish_drop
+
+adjust_drop_to_platform_start:
+	li $t0, PLATFORM_START
+	sw $t0, player_x
+	j finish_drop
+
+adjust_drop_to_platform_end:
+	li $t0, PLATFORM_END
+	subi $t0, $t0, 1  # Subtract 1 to stay within bounds
+	sw $t0, player_x
+	j finish_drop
+
+finish_drop:
+	# Draw player at new position
+	jal draw_player
+	j check_keyboard_end
+
+skip_drop:
 	# Just redraw the player at the current position
 	jal draw_player
 	j check_keyboard_end

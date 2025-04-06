@@ -9,9 +9,6 @@
 .end_macro
 
 .eqv BASE_ADDRESS 0x10008000
-.eqv PLAYER_START_POS 8		# Note: x-coordinate
-.eqv ENEMY1_START_POS 24	# Note: x-coordinate
-.eqv ENEMY1_END_POS 32	# Note: x-coordinate
 .eqv DISPLAY_WIDTH 64
 .eqv PLATFORM_START 4
 .eqv PLATFORM_END 60
@@ -61,9 +58,10 @@
 .eqv TOTAL_COINS 4
 
 .data
-player_x:   .word 10    # Store player's current x position
+player_x:   	.word 10    # Store player's current x position
 player_y:	.word 63	# Y pos
-player_vy:	.word 0		# Velocity
+enemy_x:    	.word 54    # Enemy x position (starting at 54)
+enemy_y:    	.word 63    # Enemy y position (starting on platform)
 coins_x:	.word 15, 30, 35, 40
 coins_y:	.word 56, 56, 47, 56
 coins_adj_y:	.word 0, 0, 0, 0
@@ -389,6 +387,7 @@ draw_game:
 	jal draw_platforms	# Draw platforms
 	jal draw_coins
 	jal draw_player		# Draw player at current position
+	jal draw_enemy
 	jal draw_coin_counter
 	
 	# Restore return address and return
@@ -606,6 +605,36 @@ erase_player:
 	
 	pop_ra
 	jr $ra
+
+draw_enemy:
+    push_ra
+    li $t0, BASE_ADDRESS
+    li $t9, RED         # Enemy is colored RED
+    
+    # Get current enemy position
+    lw $t1, enemy_x
+    lw $t2, enemy_y
+    
+    # Now draw enemy (same height as player, OBJ_HEIGHT)
+    subi $t2, $t2, 1
+    li $t7, OBJ_HEIGHT
+    li $t3, 0
+    
+draw_enemy_loop:
+    sub $t4, $t2, $t3
+    li $t5, DISPLAY_WIDTH
+    mul $t4, $t4, $t5
+    sll $t4, $t4, 2
+    add $t4, $t0, $t4
+    move $t5, $t1        # Use current enemy_x
+    sll $t5, $t5, 2
+    add $t6, $t4, $t5
+    sw $t9, 0($t6)       # Draw pixel in red
+    add $t3, $t3, 1
+    bne $t3, $t7, draw_enemy_loop
+    
+    pop_ra
+    jr $ra
 
 # Check for keyboard input
 check_keyboard_input:

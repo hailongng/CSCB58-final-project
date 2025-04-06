@@ -21,7 +21,8 @@
 .eqv GREEN 0x00ff00
 .eqv YELLOW 0xffff00
 .eqv WHITE 0xffffff
-.eqv BLACK 0x000000     # Added black color for erasing
+.eqv BLACK 0x000000
+.eqv ORANGE 0xffa500
 .eqv PLATFORM_HEIGHT 4
 .eqv PLATFORM_Y 63
 
@@ -33,7 +34,7 @@
 .eqv FLOOR12_START 25
 .eqv FLOOR12_END 50
 
-.eqv FLOOR13_Y 54
+.eqv FLOOR13_Y 50
 .eqv FLOOR13_START 30
 .eqv FLOOR13_END 55
 
@@ -64,23 +65,45 @@ player_x:   .word 10    # Store player's current x position
 player_y:	.word 63	# Y pos
 player_vy:	.word 0		# Velocity
 coins_x:	.word 15, 30, 35, 40
-coins_y:	.word 56, 56, 56, 56
+coins_y:	.word 56, 56, 47, 56
+coins_adj_y:	.word 0, 0, 0, 0
 coins_collected:	.word 0
 coins_active:		.word 1, 1, 1, 1	# 1: not collected, 0: collected
 game_won:		.word 0
 game_lost:		.word 0
+coin_just_collected:	.word 0
 
 .globl main
 .text
 main:
+	# Initialize coin hitboxes
+	li $t0, 0                # Counter for coins
+init_coin_loop:
+	beq $t0, 4, init_coin_end # If processed all 4 coins, exit
+	
+	# Get coin coordinates
+	la $t1, coins_y
+	la $t2, coins_adj_y
+	sll $t3, $t0, 2          # Multiply counter by 4 to get offset
+	add $t1, $t1, $t3        # Add offset to coins_y address
+	add $t2, $t2, $t3        # Add offset to coins_adj_y address
+	
+	lw $t4, 0($t1)           # Load y-coordinate
+	addi $t4, $t4, 1         # Add 1 to get the right/bottom corner
+	sw $t4, 0($t2)           # Store in coins_adj_y
+	
+	addi $t0, $t0, 1         # Increment counter
+	j init_coin_loop         # Process next coin
+	
+init_coin_end:
 	# Initialize the game
 	jal draw_game
 	
 game_loop:
 	lw $t0, game_won
 	bnez $t0, game_loop		# If game is won, just loop without processing inputs
-	lw $t0, game_won		
-	bnez $t0, game_loop		# If game is won, just loop without processing inputs
+	lw $t0, game_lost
+	bnez $t0, game_loop		# If game is lost, just loop without processing inputs
 	jal check_keyboard_input	# Check for keyboard input
 	
 	jal check_coin_collection
@@ -127,7 +150,7 @@ draw_win_message:
 	li $t1, GREEN  # Green color for the win message
 	
 	# Draw W in center of screen
-	# We'll draw a simple W shape using pixels at around positions:
+	# I draw a simple W shape using pixels at around positions:
 	# (24,30) to (24,34) | (28,34) | (32,34) to (32,30)
 	# And diagonals from (24,34) to (28,38) and (32,34) to (28,38)
 	
@@ -263,8 +286,7 @@ l_horizontal:
 	addi $t2, $t2, 1  # Increment X
 	ble $t2, $t4, l_horizontal
 	
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 ############# END OF DRAW LOSE MESSAGE ###########################################
 
@@ -366,8 +388,7 @@ draw_platforms:
 	jr $ra
 	
 draw_coins:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
+	push_ra
 	
 	li $t0, BASE_ADDRESS     # Base display address
 	li $t1, YELLOW           # Yellow color for coins
@@ -377,6 +398,13 @@ draw_coins:
 	
 draw_coins_loop:
 	beq $t2, 4, draw_coins_end  # If we've drawn all 4 coins, exit
+	
+	# Check if coin is active
+	la $t3, coins_active
+	sll $t5, $t2, 2          # Calculate offset
+	add $t3, $t3, $t5
+	lw $t4, 0($t3)           # Load active status
+	beqz $t4, skip_draw_coin  # Skip if coin is already collected
 	
 	# Get coin coordinates
 	la $t3, coins_x
@@ -411,21 +439,27 @@ draw_coins_loop:
 	addi $t9, $t9, 4         # Move one pixel right
 	sw $t1, 0($t9)           # Draw fourth pixel
 	
+skip_draw_coin:
 	addi $t2, $t2, 1         # Increment counter
 	j draw_coins_loop        # Process next coin
 	
 draw_coins_end:
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 
 # Draw the player at current position
 draw_player:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
-	
+	push_ra
 	li $t0, BASE_ADDRESS
-	li $t9, WHITE        # Player color
+	
+	# Set player color
+	lw $t9, coin_just_collected
+	beqz $t9, use_white_color
+	li $t9, ORANGE  # Orange if just collected a coin
+	j color_chosen
+use_white_color:
+	li $t9, WHITE  # Default white color
+color_chosen:
 	
 	# Get current player x position
 	lw $t1, player_x
@@ -448,14 +482,12 @@ draw_player:
 	add $t3, $t3, 1
 	bne $t3, $t7, draw_player_loop
 	
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 
 # Erase the player from current position
 erase_player:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
+	push_ra
 	
 	li $t0, BASE_ADDRESS
 	li $t9, BLACK        # Color to erase with
@@ -481,20 +513,20 @@ erase_player:
 	add $t3, $t3, 1
 	bne $t3, $t7, erase_player_loop
 	
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 
 # Check for keyboard input
 check_keyboard_input:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
+	push_ra
 	
 	# Check if key pressed
 	lw $t0, KEYBOARD_CONTROL
 	andi $t0, $t0, 1
 	beqz $t0, check_keyboard_end   # No key pressed
 	
+	# Reset coin_just_collected to 0
+	sw $zero, coin_just_collected
 	# Key was pressed, get the value
 	lw $t1, KEYBOARD_DATA
 	
@@ -669,6 +701,7 @@ adjust_to_platform_start:
 	
 adjust_to_platform_end:
 	li $t0, PLATFORM_END
+	subi $t0, $t0, 1  # Subtract 1 to stay within bounds
 	sw $t0, player_x
 	
 check_platform_end:
@@ -700,7 +733,7 @@ check_jump_from_platform:
 check_floor12:
 	blt $t0, FLOOR12_START, check_floor13
 	bgt $t0, FLOOR12_END, check_floor13
-	# Can jump to floor13
+	# Can jump to floor12
 	li $t2, FLOOR12_Y
 	sw $t2, player_y
 	j perform_jump
@@ -750,88 +783,149 @@ check_keyboard_end:
 	jr $ra
 	
 check_coin_collection:
+	# Save the return address properly
 	push_ra
 	lw $t0, player_x
 	lw $t1, player_y
 	
-	li $t2, 0	# Initialise coin counter loop
+	li $t2, 0	# Initialize coin counter loop
 check_coin_loop:
 	beq $t2, 4, check_coins_end
 	# Check if the coin is collected
 	la $t3, coins_active
 	sll $t4, $t2, 2		# Find offset
-	add $t3, $t3, $t4	# Add offset to current coin addresss
+	add $t3, $t3, $t4	# Add offset to current coin address
 	lw $t5, 0($t3)		# Load active status
 	beqz $t5, next_coin	# Skip if the coin is already collected
 		
 	la $t6, coins_x		
-	la $t7, coins_y		
+	la $t7, coins_y
+	la $t8, coins_adj_y
 	add $t6, $t6, $t4	# Offset adjustment
 	add $t7, $t7, $t4
-	lw $t8, 0($t6)		# Load coin x-coordinate
-	lw $t9, 0($t7)		# Load coin y-coordinate
+	add $t8, $t8, $t4   # Correct access to coins_adj_y
+	lw $s0, 0($t6)		# Load coin x-coordinate
+	lw $s1, 0($t7)		# Load coin y-coordinate
+	lw $s2, 0($t8)		# Load coin y+1 coordinate
 	
-	# Check y-coord with some tolerance (remember, player is 3 units tall)
-	bne $t0, $t8, next_coin
-	sub $t9, $t1, $t9
-	abs $t9, $t9
-	bgt $t9, 3, next_coin		# If difference is too large, move to the next coin
+	# Check if player x matches either left or right edge of coin
+	beq $t0, $s0, check_y_match    # Player x matches coin left edge
+	addi $s3, $s0, 1              # Right edge of coin (x+1)
+	bne $t0, $s3, next_coin       # If player x doesn't match coin right edge either, skip
 	
-	# We encounter a coin. Deal with it
-	## TO DO: Need to change the effect color of player "picking up" the coin
-	sw $zero, 0($t3)
+check_y_match:
+	# Check if player y is within range of the coin's hitbox
+	# Check against top edge of coin
+	sub $s4, $t1, $s1
+	abs $s4, $s4
+	bgt $s4, 3, check_bottom_y    # If not within top range, check bottom
+	j collect_coin                # Within range, collect the coin
 	
-	# Increase the number of coins collected
-	lw $t9, coins_collected
-	addi $t9, $t9, 1
-	sw $t9, coins_collected
-	
-	jal erase_coin
-	
+check_bottom_y:
+	# Check against bottom edge of coin
+	sub $s4, $t1, $s2
+	abs $s4, $s4
+	bgt $s4, 3, next_coin        # If not within bottom range either, skip
+
+collect_coin:
+    # We encounter a coin. Deal with it
+    sw $zero, 0($t3)
+    
+    # Increase the number of coins collected
+    lw $t9, coins_collected
+    addi $t9, $t9, 1
+    sw $t9, coins_collected
+    
+    # Set the coin_just_collected flag
+    li $t9, 1
+    sw $t9, coin_just_collected
+    
+    # 1. First erase the coin (inline code)
+    # Use the already loaded values for coin coordinates
+    li $a0, BASE_ADDRESS
+    li $a1, BLACK
+    
+    # Erase 2x2 square
+    li $s5, DISPLAY_WIDTH
+    mul $s6, $s1, $s5       # y * width
+    add $s6, $s6, $s0       # y * width + x
+    sll $s6, $s6, 2         # * 4 bytes per pixel
+    add $s6, $a0, $s6
+    
+    # Top-left pixel
+    sw $a1, 0($s6)
+    
+    # Top-right pixel
+    addi $s6, $s6, 4
+    sw $a1, 0($s6)
+    
+    # Bottom-left pixel
+    li $s5, DISPLAY_WIDTH
+    sll $s5, $s5, 2
+    sub $s6, $s6, 4
+    add $s6, $s6, $s5
+    sw $a1, 0($s6)
+    
+    # Bottom-right pixel
+    addi $s6, $s6, 4
+    sw $a1, 0($s6)
+    
+    # Now redraw the player inline
+    # First erase player
+    li $a0, BASE_ADDRESS
+    li $a1, BLACK        # Color to erase with
+    
+    # Get current player x position
+    lw $a2, player_x
+    lw $a3, player_y    
+    
+    # Erase player
+    subi $a3, $a3, 1
+    li $s0, OBJ_HEIGHT
+    li $s1, 0
+erase_player_inline_loop:
+    sub $s2, $a3, $s1
+    li $s3, DISPLAY_WIDTH
+    mul $s2, $s2, $s3
+    sll $s2, $s2, 2
+    add $s2, $a0, $s2
+    move $s3, $a2        # Use current player_x
+    sll $s3, $s3, 2
+    add $s4, $s2, $s3
+    sw $a1, 0($s4)
+    add $s1, $s1, 1
+    bne $s1, $s0, erase_player_inline_loop
+    
+    # Now draw player in orange
+    li $a0, BASE_ADDRESS
+    li $a1, ORANGE  # Orange color for player
+    
+    # Get current player x position
+    lw $a2, player_x
+    lw $a3, player_y
+    
+    # Draw player
+    subi $a3, $a3, 1
+    li $s0, OBJ_HEIGHT
+    li $s1, 0
+draw_player_inline_loop:
+    sub $s2, $a3, $s1
+    li $s3, DISPLAY_WIDTH
+    mul $s2, $s2, $s3
+    sll $s2, $s2, 2
+    add $s2, $a0, $s2
+    move $s3, $a2        # Use current player_x
+    sll $s3, $s3, 2
+    add $s4, $s2, $s3
+    sw $a1, 0($s4)
+    add $s1, $s1, 1
+    bne $s1, $s0, draw_player_inline_loop
+    
 next_coin:
-	addi $t2, $t2, 1
-	j check_coin_loop
+    addi $t2, $t2, 1
+    j check_coin_loop
 	
 check_coins_end:
+	# Restore return address and return
 	pop_ra
-	jr $ra
-
-erase_coin:
-	# $t2 contains the coin index
-	# Get coin coordinates
-	la $t3, coins_x
-	la $t4, coins_y
-	sll $t5, $t2, 2          # Multiply by 4 to get offset
-	add $t3, $t3, $t5        # Add offset to coins_x address
-	add $t4, $t4, $t5        # Add offset to coins_y address
-	lw $t6, 0($t3)           # Load x-coordinate
-	lw $t7, 0($t4)           # Load y-coordinate
-	
-	li $t0, BASE_ADDRESS     # Base display address
-	li $t1, BLACK            # Black color for erasing
-	
-	# Erase 2x2 square at (x,y)
-	# First pixel (top-left)
-	li $t8, DISPLAY_WIDTH
-	mul $t9, $t7, $t8        # y * width
-	add $t9, $t9, $t6        # y * width + x
-	sll $t9, $t9, 2          # Multiply by 4 (bytes per pixel)
-	add $t9, $t0, $t9        # Add base address
-	sw $t1, 0($t9)           # Erase first pixel
-	
-	# Second pixel (top-right)
-	addi $t9, $t9, 4         # Move one pixel right
-	sw $t1, 0($t9)           # Erase second pixel
-	
-	# Third pixel (bottom-left)
-	li $t8, DISPLAY_WIDTH
-	sll $t8, $t8, 2          # Convert width to bytes
-	sub $t9, $t9, 4          # Move back to first column
-	add $t9, $t9, $t8        # Move down one row
-	sw $t1, 0($t9)           # Erase third pixel
-	
-	# Fourth pixel (bottom-right)
-	addi $t9, $t9, 4         # Move one pixel right
-	sw $t1, 0($t9)           # Erase fourth pixel
-	
 	jr $ra

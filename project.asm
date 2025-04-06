@@ -1,3 +1,13 @@
+.macro push_ra
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+.end_macro
+	
+.macro pop_ra
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+.end_macro
+
 .eqv BASE_ADDRESS 0x10008000
 .eqv PLAYER_START_POS 8		# Note: x-coordinate
 .eqv ENEMY1_START_POS 24	# Note: x-coordinate
@@ -58,6 +68,7 @@ coins_y:	.word 56, 56, 56, 56
 coins_collected:	.word 0
 coins_active:		.word 1, 1, 1, 1	# 1: not collected, 0: collected
 game_won:		.word 0
+game_lost:		.word 0
 
 .globl main
 .text
@@ -67,6 +78,8 @@ main:
 	
 game_loop:
 	lw $t0, game_won
+	bnez $t0, game_loop		# If game is won, just loop without processing inputs
+	lw $t0, game_won		
 	bnez $t0, game_loop		# If game is won, just loop without processing inputs
 	jal check_keyboard_input	# Check for keyboard input
 	
@@ -80,9 +93,7 @@ game_loop:
 	j game_loop
 
 check_win_condition:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
-	
+	push_ra
 	lw $t0, coins_collected
 	li $t1, TOTAL_COINS
 	bne $t0, $t1, win_condition_end  # If not all coins collected, return
@@ -95,8 +106,7 @@ check_win_condition:
 	jal draw_win_message
 	
 win_condition_end:
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 	
 delay:
@@ -111,8 +121,7 @@ exit_game:
 	
 ############# DRAW WIN MESSAGE ###########################################
 draw_win_message:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
+	push_ra
 	
 	li $t0, BASE_ADDRESS
 	li $t1, GREEN  # Green color for the win message
@@ -208,10 +217,56 @@ middle_vertical:
 	addi $t3, $t3, 1
 	ble $t3, $t4, middle_vertical
 	
+	pop_ra
+	jr $ra
+############# END OF DRAW WIN MESSAGE ###########################################
+
+############# DRAW LOSE MESSAGE ###########################################
+draw_lose_message:
+	push_ra
+	
+	li $t0, BASE_ADDRESS
+	li $t1, RED  # Red color for the lose message
+	
+	# Draw L in center of screen
+	# Vertical line of L
+	li $t2, 28  # X position
+	li $t3, 30  # Starting Y position
+	li $t4, 38  # Ending Y position
+	
+l_vertical:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	addi $t3, $t3, 1
+	ble $t3, $t4, l_vertical
+	
+	# Horizontal line of L
+	li $t2, 28  # Starting X position
+	li $t3, 38  # Y position
+	li $t4, 36  # Ending X position
+	
+l_horizontal:
+	# Calculate address: BASE + (y * WIDTH + x) * 4
+	li $t5, DISPLAY_WIDTH
+	mul $t6, $t3, $t5
+	add $t6, $t6, $t2
+	sll $t6, $t6, 2
+	add $t6, $t0, $t6
+	sw $t1, 0($t6)  # Draw pixel
+	
+	addi $t2, $t2, 1  # Increment X
+	ble $t2, $t4, l_horizontal
+	
 	lw $ra, 0($sp)
 	addi $sp, $sp, 4
 	jr $ra
-############# END OF DRAW WIN MESSAGE ###########################################
+############# END OF DRAW LOSE MESSAGE ###########################################
 
 # Draw the entire game state
 draw_game:
@@ -466,6 +521,10 @@ move_left:
 	subi $t0, $t0, 1
 	sw $t0, player_x
 	
+	jal check_fall_off_platform	# Check if the player fall out of the platform
+	lw $t0, game_lost
+	bnez $t0, check_keyboard_end
+	
 	jal check_platform_beneath	# Check if player is at valid pos
 	
 	jal draw_player			# Draw player
@@ -483,13 +542,50 @@ move_right:
 	addi $t0, $t0, 1
 	sw $t0, player_x
 	
+	jal check_fall_off_platform	# Check if the player fall out of the platform
+	lw $t0, game_lost
+	bnez $t0, check_keyboard_end
+	
 	jal check_platform_beneath
 	jal draw_player
 	j check_keyboard_end
 
+# New function to check if player has fallen off the platform
+check_fall_off_platform:
+	push_ra
+	
+	lw $t0, player_x
+	lw $t1, player_y
+	
+	# Check if player is out of bounds horizontally
+	blt $t0, 0, player_lost
+	bge $t0, DISPLAY_WIDTH, player_lost
+	
+	# If player is at the bottom platform level
+	li $t2, PLATFORM_Y
+	bne $t1, $t2, check_fall_off_end
+	
+	# Check if player is not on platform
+	blt $t0, PLATFORM_START, player_lost
+	bge $t0, PLATFORM_END, player_lost
+	
+check_fall_off_end:
+	pop_ra
+	jr $ra
+	
+player_lost:
+	# Player has fallen off platform or out of bounds
+	li $t0, 1
+	sw $t0, game_lost
+	
+	# Draw lose message
+	jal draw_lose_message
+	
+	pop_ra
+	jr $ra
+
 check_platform_beneath:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
+	push_ra
 	
 	lw $t0, player_x
 	lw $t1, player_y
@@ -576,8 +672,7 @@ adjust_to_platform_end:
 	sw $t0, player_x
 	
 check_platform_end:
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 	
 jump_up:
@@ -651,13 +746,11 @@ skip_jump:
 	j check_keyboard_end
 	
 check_keyboard_end:
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 	
 check_coin_collection:
-	addi $sp, $sp, -4
-	sw $ra, 0($sp)
+	push_ra
 	lw $t0, player_x
 	lw $t1, player_y
 	
@@ -700,8 +793,7 @@ next_coin:
 	j check_coin_loop
 	
 check_coins_end:
-	lw $ra, 0($sp)
-	addi $sp, $sp, 4
+	pop_ra
 	jr $ra
 
 erase_coin:
@@ -743,15 +835,3 @@ erase_coin:
 	sw $t1, 0($t9)           # Erase fourth pixel
 	
 	jr $ra
-# Delay function
-#delay:
-	# $a0 contains the delay amount
-	#li $t0, 0
-#delay_loop:
-	#addi $t0, $t0, 1
-	#blt $t0, $a0, delay_loop
-	#jr $ra
-
-#exit_game:
-	#li $v0, 10
-	#syscall

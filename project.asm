@@ -75,6 +75,95 @@ coin_just_collected:	.word 0
 
 .globl main
 .text
+	j main
+
+draw_coin_counter:
+    push_ra
+    
+    # Base address and color
+    li $t0, BASE_ADDRESS
+    li $t1, YELLOW       # Gold color for coin stripes
+    
+    # Draw background for counter (small black rectangle)
+    li $t2, 2            # X position of counter
+    li $t3, 2            # Y position of counter
+    li $t4, 20           # Width of background
+    li $t5, 5            # Height of background
+    
+    # Draw background rectangle
+    li $t6, 0            # Y counter
+background_y_loop:
+    bge $t6, $t5, background_done
+    
+    li $t7, 0            # X counter
+background_x_loop:
+    bge $t7, $t4, background_x_done
+    
+    # Calculate address: BASE + ((y+t3) * WIDTH + (x+t2)) * 4
+    add $t8, $t3, $t6    # y + y_offset
+    li $t9, DISPLAY_WIDTH
+    mul $t8, $t8, $t9    # (y + y_offset) * width
+    add $t8, $t8, $t2    # (y + y_offset) * width + x_offset
+    add $t8, $t8, $t7    # (y + y_offset) * width + x_offset + x_counter
+    sll $t8, $t8, 2      # * 4 (bytes per pixel)
+    add $t8, $t0, $t8    # Add base address
+    
+    # Draw black pixel
+    li $t9, BLACK
+    sw $t9, 0($t8)
+    
+    addi $t7, $t7, 1     # Increment x counter
+    j background_x_loop
+    
+background_x_done:
+    addi $t6, $t6, 1     # Increment y counter
+    j background_y_loop
+    
+background_done:
+    # Now draw the gold bars based on coins collected
+    lw $t2, coins_collected  # Get number of collected coins
+    beqz $t2, counter_done   # If no coins collected, we're done
+    
+    li $t3, 0                # Counter for bars
+bars_loop:
+    beq $t3, $t2, counter_done  # If we've drawn all bars, exit
+    
+    # Calculate x position for this bar
+    li $t4, 4                # Starting x position
+    li $t5, 3                # Space between bars
+    mul $t6, $t3, $t5        # bar_index * spacing
+    add $t4, $t4, $t6        # x_pos = start_x + (bar_index * spacing)
+    
+    # Draw a vertical bar (height 3)
+    li $t5, 3                # Y position
+    li $t7, 3                # Height of bar
+    
+    li $t6, 0                # Counter for height
+bar_height_loop:
+    beq $t6, $t7, bar_done
+    
+    # Calculate pixel address
+    add $t8, $t5, $t6        # y + height_counter
+    li $t9, DISPLAY_WIDTH
+    mul $t8, $t8, $t9        # (y + height_counter) * width
+    add $t8, $t8, $t4        # (y + height_counter) * width + x
+    sll $t8, $t8, 2          # * 4 (bytes per pixel)
+    add $t8, $t0, $t8        # Add base address
+    
+    # Draw yellow pixel
+    sw $t1, 0($t8)
+    
+    addi $t6, $t6, 1         # Increment height counter
+    j bar_height_loop
+    
+bar_done:
+    addi $t3, $t3, 1         # Move to next bar
+    j bars_loop
+    
+counter_done:
+    pop_ra
+    jr $ra
+
 main:
 	# Initialize coin hitboxes
 	li $t0, 0                # Counter for coins
@@ -107,6 +196,7 @@ game_loop:
 	jal check_keyboard_input	# Check for keyboard input
 	
 	jal check_coin_collection
+	jal draw_coin_counter
 	jal check_win_condition		# Check if all coins are collected
 	
 	# Small delay
@@ -299,6 +389,7 @@ draw_game:
 	jal draw_platforms	# Draw platforms
 	jal draw_coins
 	jal draw_player		# Draw player at current position
+	jal draw_coin_counter
 	
 	# Restore return address and return
 	lw $ra, 0($sp)
@@ -536,6 +627,7 @@ check_keyboard_input:
 	# Move right if 'd' is pressed
 	beq $t1, KEY_D, move_right
 	beq $t1, KEY_W, jump_up
+	#beq $t1, KEY_S, drop_down
 	# Quit if 'q' is pressed
 	beq $t1, KEY_Q, exit_game
 	
@@ -920,6 +1012,7 @@ draw_player_inline_loop:
     sw $a1, 0($s4)
     add $s1, $s1, 1
     bne $s1, $s0, draw_player_inline_loop
+    jal draw_coin_counter
     
 next_coin:
     addi $t2, $t2, 1

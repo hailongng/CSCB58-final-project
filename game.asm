@@ -24,9 +24,9 @@
 # 2. Shoot enemies [2 marks]
 # 3. Start menu [1 mark]
 #
-# Link to video demonstration for final submission:
+# Link to video demonstration for final submission: https://play.library.utoronto.ca/watch/13544dea1c3b97112462d7a23dd0e188
 # 
-# Are you OK with us sharing the video with people outside course staff? YES
+# Are you OK with us sharing the video with people outside course staff? NO
 #
 # Any additional information that the TA needs to know:
 # Some display issue:

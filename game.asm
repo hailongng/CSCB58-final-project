@@ -62,6 +62,7 @@
 .eqv BLACK 0x000000
 .eqv ORANGE 0xffa500
 .eqv LIGHT_BLUE 0x87cefa    
+.eqv GRAY 0x808080
 .eqv PLATFORM_HEIGHT 4
 .eqv PLATFORM_Y 63
 
@@ -114,7 +115,7 @@ enemy_x:	.word 50
 enemy_y:	.word 63
 enemy_direction: .word 1   # 1 = moving right, -1 = moving left
 enemy_move_counter: .word 0
-enemy_move_delay:   .word 200  # Adjust this value to change speed (higher = slower)
+enemy_move_delay:   .word 150  # Adjust this value to change speed (higher = slower)
 enemy_active:   .word 1     # 1 = enemy alive, 0 = enemy dead
 coins_x:	.word 15, 30, 35, 40
 coins_y:	.word 56, 56, 47, 56
@@ -1016,11 +1017,17 @@ draw_coins_end:
 draw_player:
 	push_ra
 	li $t0, BASE_ADDRESS
-	
+	# Set player color based on game state and coin collection
+	lw $t8, game_lost
+	bnez $t8, use_gray_color     # If game is lost, use gray
+    
 	# Set player color
 	lw $t9, coin_just_collected
 	beqz $t9, use_white_color
 	li $t9, ORANGE  # Orange if just collected a coin
+	j color_chosen
+use_gray_color:
+	li $t9, GRAY
 	j color_chosen
 use_white_color:
 	li $t9, WHITE  # Default white color
@@ -2052,7 +2059,7 @@ check_enemy_collision:
     # Player collided with enemy, game over
     li $t0, 1
     sw $t0, game_lost
-    
+    jal draw_player
     # Draw lose message
     jal draw_lose_message
     
